@@ -3,6 +3,7 @@
 
 #include "ThreadedProceduralMesh.h"
 #include "ProceduralMeshComponent.h"
+#include "Chunk.h"
 #include "HAL/RunnableThread.h"
 
 #include <condition_variable>
@@ -10,6 +11,8 @@
 #include <memory>
 #include <mutex>
 #include <stack>
+
+#include "Kismet/GameplayStatics.h"
 
 namespace
 {
@@ -101,6 +104,15 @@ namespace
     p.yTotalUnits = aMesh.yTotalUnits;
 
     return p;
+  }
+
+  void createProceduralMeshSection(
+    UProceduralMeshComponent* mesh,
+    const int32 sectionIndex,
+    const MeshData& meshData)
+  {
+    const auto& [vertices, triangles, normals, uv0, colors, tangents] = meshData;
+    mesh->CreateMeshSection_LinearColor(sectionIndex, vertices, triangles, normals, uv0, colors, tangents, true);
   }
 } // namespace
 
@@ -242,9 +254,29 @@ struct AThreadedProceduralMesh::Private
 AThreadedProceduralMesh::AThreadedProceduralMesh()
   : p{new Private}
 {
-  p->mesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh"));
-  p->mesh->bUseAsyncCooking = true;
-  RootComponent = p->mesh;
+  // Create a default sub-object so we can see (and move) something in the Editor.
+  {
+    p->mesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh"));
+
+    {
+      MeshParameters meshParameters = getMeshParameters(*this);
+      meshParameters.xSteps = 1;
+      meshParameters.ySteps = 1;
+
+      {
+        std::unique_ptr workUnit = p->getUnusedWorkUnit();
+
+        workUnit->meshParameters = meshParameters;
+        generateMesh(*workUnit);
+        createProceduralMeshSection(p->mesh, 0, workUnit->meshData);
+
+        p->putUnusedWorkUnit(std::move(workUnit));
+      }
+    }
+
+    RootComponent = p->mesh;
+  }
+  
   p->meshGenerator = std::make_unique<MeshGenerator>();
 
   // not sure if I need all of these but it seems Unreal changes how ticks work from version to version and this combo works
@@ -262,12 +294,20 @@ void AThreadedProceduralMesh::BeginPlay()
 {
   Super::BeginPlay();
   UE_LOG(LogTemp, Warning, TEXT("AThreadedProceduralMesh::BeginPlay()"));
+  SetActorHiddenInGame(true);
+}
+
+void AThreadedProceduralMesh::OnConstruction(const FTransform& Transform)
+{
+  Super::OnConstruction(Transform);
+  UE_LOG(LogTemp, Warning, TEXT("AThreadedProceduralMesh::OnConstruction()"));
+  p ->mesh->SetMaterial(0, Material);
 }
 
 void AThreadedProceduralMesh::Tick(float DeltaTime)
 {
   Super::Tick(DeltaTime);
-  
+
   if (!p->generated)
   {
     if (!p->generating)
@@ -281,15 +321,26 @@ void AThreadedProceduralMesh::Tick(float DeltaTime)
     else
     {
       UE_LOG(LogTemp, Warning, TEXT("AThreadedProceduralMesh::Tick(): checking if generation done"));
-      if( std::unique_ptr workUnit = p->meshGenerator->getCompletedMesh())
+
+      if (std::unique_ptr workUnit = p->meshGenerator->getCompletedMesh())
       {
         UE_LOG(LogTemp, Warning, TEXT("AThreadedProceduralMesh::Tick(): got generated mesh; setting mesh section"));
-        const auto& [vertices, triangles, normals, uv0, colors, tangents] = workUnit->meshData;
-        p->mesh->CreateMeshSection_LinearColor(0, vertices, triangles, normals, uv0, colors, tangents, true);
-        p->mesh->SetMaterial(0, Material);
+
+        const auto location = GetTransform().GetLocation();
+        UE_LOG(LogTemp, Warning, TEXT("AThreadedProceduralMesh::Tick(): creating AChunk at (%f,%f,%f)"), location.X,
+               location.Y, location.Z);
+
+        AChunk* chunk = GetWorld()->SpawnActorDeferred<AChunk>(AChunk::StaticClass(), FTransform());
+
+        createProceduralMeshSection(chunk->mesh, 0, workUnit->meshData);
+        p->putUnusedWorkUnit(std::move(workUnit));
+        chunk->mesh->SetMaterial(0, Material);
+
+        // chunk->SetActorTransform(GetTransform());
+        UGameplayStatics::FinishSpawningActor(chunk, GetTransform());
+
         p->generating = false;
         p->generated = true;
-        p->putUnusedWorkUnit(std::move(workUnit ));
       }
     }
   }

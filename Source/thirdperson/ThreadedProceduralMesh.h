@@ -30,6 +30,7 @@ public:
   AThreadedProceduralMesh();
   ~AThreadedProceduralMesh() override;
 
+  void OnConstruction(const FTransform& Transform) override;
   void Tick(float DeltaTime) override;
 
 protected:

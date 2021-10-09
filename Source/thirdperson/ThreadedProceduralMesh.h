@@ -9,34 +9,34 @@
 UCLASS()
 class THIRDPERSON_API AThreadedProceduralMesh : public AActor
 {
-	GENERATED_BODY()
-	
-public:	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	UMaterialInterface *Material;
-  
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "1", ClampMax = "255"))
+  GENERATED_BODY()
+
+public:
+  UPROPERTY(EditAnywhere, BlueprintReadWrite)
+  UMaterialInterface* Material;
+
+  UPROPERTY(EditAnywhere, meta = (ClampMin = "1", ClampMax = "255"))
   int32 xSteps = 1;
-  
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "1", ClampMax = "255"))
+
+  UPROPERTY(EditAnywhere, meta = (ClampMin = "1", ClampMax = "255"))
   int32 ySteps = 1;
-	
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0", ClampMax = "10000.0"))
+
+  UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0", ClampMax = "10000.0"))
   float xTotalUnits = 100.f;
-  
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0", ClampMax = "10000.0"))
+
+  UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0", ClampMax = "10000.0"))
   float yTotalUnits = 100.f;
-  
-	AThreadedProceduralMesh();
-	~AThreadedProceduralMesh() override;
-	
-	void Tick(float DeltaTime) override;
+
+  AThreadedProceduralMesh();
+  ~AThreadedProceduralMesh() override;
+
+  void Tick(float DeltaTime) override;
 
 protected:
-	// Called when the game starts or when spawned
-	void BeginPlay() override;
+  // Called when the game starts or when spawned
+  void BeginPlay() override;
 
 private:
-	struct Private;
-	Private *p;
+  struct Private;
+  Private* p;
 };

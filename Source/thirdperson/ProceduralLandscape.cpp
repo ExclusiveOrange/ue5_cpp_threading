@@ -13,7 +13,7 @@ namespace
   
   void
   enumerateChunksInRadius(
-    TArray<FIntVector2>& chunksInRadius,
+    TArray<FIntVector>& chunksInRadius,
     const FVector2D center,
     const float radius,
     const float chunkSize)
@@ -30,7 +30,7 @@ namespace
     {
       return
         (FVector2D{x*chunkSize,y*chunkSize}-center).SizeSquared() <= radius * radius
-          ? (chunksInRadius.Emplace(x, y), true)
+          ? (chunksInRadius.Emplace(x, y, 0), true)
           : false;
     };
 
@@ -47,45 +47,35 @@ namespace
     {
       const int32 numChunksAtStart = chunksInRadius.Num();
 
-      // NOTE: the comma operator is used in the following loop bodies to ensure the proper sequence of operations
-      //       and to prevent short-circuiting. This is important to avoid duplicate registration of corner chunks
-      //       and to avoid missing chunks just inside the radius.
+      // Demonstration of possible registration order with a small radius:
+      //  
+      //             26 25 27
+      //          12 10  9 11 20
+      //       36 23  2  1  6 18 32
+      //       34 21  7  0  5 17 31
+      // +x    35 22  8  3  4 19 33
+      //  |       24 15 13 14 16 
+      //  |          30 28 29
+      //  |
+      //  +-------- +y
 
-      // +x
-      for (int32 o = 0, any; o < d;)
-        if ((
-          any = 0,
-          any += emplaceIfInRadius(xCenter + d, yCenter + o),
-          any += emplaceIfInRadius(xCenter + d, yCenter - (++o)),
-          any == 0))
-          break;
+      for(int32 o = 0; o < d;)
+      {
+        int any = emplaceIfInRadius(xCenter + d, yCenter + o); // +x
+        any += emplaceIfInRadius(xCenter - d, yCenter - o);    // -x
+        any += emplaceIfInRadius(xCenter - o, yCenter + d);    // +y
+        any += emplaceIfInRadius(xCenter + o, yCenter - d);    // +z
 
-      // -x
-      for (int32 o = 0, any; o < d;)
-        if ((
-          any = 0,
-          any += emplaceIfInRadius(xCenter - d, yCenter - o),
-          any += emplaceIfInRadius(xCenter - d, yCenter + (++o)),
-          any == 0))
-          break;
+        ++o;
 
-      // +y
-      for (int32 o = 0, any; o < d;)
-        if ((
-          any = 0,
-          any += emplaceIfInRadius(xCenter - o, yCenter + d),
-          any += emplaceIfInRadius(xCenter + (++o), yCenter + d),
-          any == 0))
-          break;
+        any += emplaceIfInRadius(xCenter + d, yCenter - o);    // +x
+        any += emplaceIfInRadius(xCenter - d, yCenter + o);    // -x
+        any += emplaceIfInRadius(xCenter + o, yCenter + d);    // +y
+        any += emplaceIfInRadius(xCenter - o, yCenter - d);    // +z
 
-      // -y
-      for (int32 o = 0, any; o < d;)
-        if ((
-          any = 0,
-          any += emplaceIfInRadius(xCenter + o, yCenter - d),
-          any += emplaceIfInRadius(xCenter - (++o), yCenter - d),
-          any == 0))
+        if(!any)
           break;
+      }
 
       // check if any chunks were found in radius; if not then stop looking
       if (chunksInRadius.Num() == numChunksAtStart)
@@ -94,7 +84,7 @@ namespace
 
     const auto endTime = clock_t::now();
     const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime-startTime).count();
-    
+
     UE_LOG(LogTemp, Warning, TEXT("ProceduralLandscape: numChunks(%d), xCenter(%d), yCenter(%d), ns(%lld)"), chunksInRadius.Num(), xCenter, yCenter, nanos);
   }
 } // namespace
@@ -103,7 +93,7 @@ namespace
 
 struct AProceduralLandscape::Private
 {
-  TArray<FIntVector2> chunksInRadius;
+  TArray<FIntVector> chunksInRadius;
 };
 
 //==============================================================================

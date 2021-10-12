@@ -335,6 +335,7 @@ void AThreadedProceduralMesh::Tick(float DeltaTime)
         createProceduralMeshSection(chunk->mesh, 0, workUnit->meshData);
         p->putUnusedWorkUnit(std::move(workUnit));
         chunk->mesh->SetMaterial(0, Material);
+        chunk->SetFolderPath("/Chunks");
 
         // chunk->SetActorTransform(GetTransform());
         UGameplayStatics::FinishSpawningActor(chunk, GetTransform());

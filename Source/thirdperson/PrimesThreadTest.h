@@ -14,8 +14,6 @@ class THIRDPERSON_API APrimesThreadTest : public AActor
 {
 	GENERATED_BODY()
 
-private:
-
 	TSharedPtr< std::atomic_bool > bBusyFindingPrimes{ new std::atomic_bool( false ) };
 	bool bLastBusyFindingPrimes{ false };
 	

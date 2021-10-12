@@ -11,24 +11,6 @@ namespace
 {
   using clock_t = std::chrono::high_resolution_clock;
   
-  struct ChunkLoadParameters
-  {
-    float loadRadius;
-    float unloadRadius;
-    float chunkSize;
-  };
-
-  bool
-  chunkIsInRadius(
-    const int32 x,
-    const int32 y,
-    const float chunkSize,
-    const FVector2D center,
-    const float radiusSquared)
-  {
-    return (FVector2D{x*chunkSize,y*chunkSize}-center).SizeSquared() <= radiusSquared;
-  }
-
   void
   enumerateChunksInRadius(
     TArray<FIntVector2>& chunksInRadius,
@@ -38,22 +20,23 @@ namespace
   {
     const auto startTime = clock_t::now();
 
-    const int32 chunksPerSide = int32(radius * 2.f / chunkSize);
-    const int32 maxExpectedNumChunks = chunksPerSide * chunksPerSide;
-
-    chunksInRadius.Empty(maxExpectedNumChunks);
+    // clear and reserve space in chunksInRadius
+    {
+      const int32 chunksPerSide = int32(radius * 2.f / chunkSize);
+      chunksInRadius.Empty(chunksPerSide * chunksPerSide);
+    }
+    
+    auto emplaceIfInRadius = [=,&chunksInRadius](const int32 x, const int32 y)
+    {
+      return
+        (FVector2D{x*chunkSize,y*chunkSize}-center).SizeSquared() <= radius * radius
+          ? (chunksInRadius.Emplace(x, y), true)
+          : false;
+    };
 
     // coordinates of center of chunk nearest 'center' in whole terms of chunkSize from world origin
     const int32 xCenter = int32(std::floor((center.X + 0.5f * chunkSize) / chunkSize));
     const int32 yCenter = int32(std::floor((center.Y + 0.5f * chunkSize) / chunkSize));
-
-    auto emplaceIfInRadius = [=,&chunksInRadius](const int32 x, const int32 y)
-    {
-      return
-        (chunkIsInRadius(x, y, chunkSize, center, radius * radius))
-          ? (chunksInRadius.Emplace(x, y), true)
-          : false;
-    };
 
     // check center chunk
     if (!emplaceIfInRadius(xCenter, yCenter))
@@ -62,7 +45,7 @@ namespace
     // check chunks in an expanding square around the center chunk
     for (int32 d = 1;; ++d)
     {
-      const int32 numChunks = chunksInRadius.Num();
+      const int32 numChunksAtStart = chunksInRadius.Num();
 
       // NOTE: the comma operator is used in the following loop bodies to ensure the proper sequence of operations
       //       and to prevent short-circuiting. This is important to avoid duplicate registration of corner chunks
@@ -105,7 +88,7 @@ namespace
           break;
 
       // check if any chunks were found in radius; if not then stop looking
-      if (chunksInRadius.Num() == numChunks)
+      if (chunksInRadius.Num() == numChunksAtStart)
         break;
     }
 

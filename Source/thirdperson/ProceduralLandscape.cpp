@@ -20,11 +20,7 @@ namespace
   {
     const auto startTime = clock_t::now();
 
-    // clear and reserve space in chunksInRadius
-    {
-      const int32 chunksPerSide = int32(radius * 2.f / chunkSize);
-      chunksInRadius.Empty(chunksPerSide * chunksPerSide);
-    }
+    chunksInRadius.Reset();
     
     auto emplaceIfInRadius = [=,&chunksInRadius](const int32 x, const int32 y)
     {
@@ -38,54 +34,72 @@ namespace
     const int32 xCenter = int32(std::floor((center.X + 0.5f * chunkSize) / chunkSize));
     const int32 yCenter = int32(std::floor((center.Y + 0.5f * chunkSize) / chunkSize));
 
-    // check center chunk
-    if (!emplaceIfInRadius(xCenter, yCenter))
-      return;
-
-    // check chunks in an expanding square around the center chunk
-    for (int32 d = 1;; ++d)
-    {
-      const int32 numChunksAtStart = chunksInRadius.Num();
-
-      // Demonstration of possible registration order with a small radius:
-      //  
-      //             26 25 27
-      //          12 10  9 11 20
-      //       36 23  2  1  6 18 32
-      //       34 21  7  0  5 17 31
-      // +x    35 22  8  3  4 19 33
-      //  |       24 15 13 14 16 
-      //  |          30 28 29
-      //  |
-      //  +-------- +y
-
-      for(int32 o = 0; o < d;)
+    // start with center chunk
+    if (emplaceIfInRadius(xCenter, yCenter))
+      // check chunks in an expanding square around the center chunk
+      for (int32 r = 1;; ++r) // radial distance from center
       {
-        int any = emplaceIfInRadius(xCenter + d, yCenter + o); // +x
-        any += emplaceIfInRadius(xCenter - d, yCenter - o);    // -x
-        any += emplaceIfInRadius(xCenter - o, yCenter + d);    // +y
-        any += emplaceIfInRadius(xCenter + o, yCenter - d);    // +z
+        const int32 numChunksAtStart = chunksInRadius.Num();
 
-        ++o;
+        for(int32 o = 0; o < r;) // orthogonal distance from axial radial
+        {
+          
+          int any = emplaceIfInRadius(xCenter + r, yCenter + o); // +x +o
+          any += emplaceIfInRadius(xCenter - r, yCenter - o);    // -x -o
+          any += emplaceIfInRadius(xCenter - o, yCenter + r);    // +y -o
+          any += emplaceIfInRadius(xCenter + o, yCenter - r);    // +z +o
 
-        any += emplaceIfInRadius(xCenter + d, yCenter - o);    // +x
-        any += emplaceIfInRadius(xCenter - d, yCenter + o);    // -x
-        any += emplaceIfInRadius(xCenter + o, yCenter + d);    // +y
-        any += emplaceIfInRadius(xCenter - o, yCenter - d);    // +z
+          ++o;
 
-        if(!any)
+          any += emplaceIfInRadius(xCenter + r, yCenter - o);    // +x -o
+          any += emplaceIfInRadius(xCenter - r, yCenter + o);    // -x +o
+          any += emplaceIfInRadius(xCenter + o, yCenter + r);    // +y +o
+          any += emplaceIfInRadius(xCenter - o, yCenter - r);    // +z -o
+
+          if(!any)
+            break;
+        }
+
+        // check if any chunks were found in radius; if not then stop looking
+        if (chunksInRadius.Num() == numChunksAtStart)
           break;
       }
-
-      // check if any chunks were found in radius; if not then stop looking
-      if (chunksInRadius.Num() == numChunksAtStart)
-        break;
-    }
 
     const auto endTime = clock_t::now();
     const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime-startTime).count();
 
-    UE_LOG(LogTemp, Warning, TEXT("ProceduralLandscape: numChunks(%d), xCenter(%d), yCenter(%d), ns(%lld)"), chunksInRadius.Num(), xCenter, yCenter, nanos);
+    //UE_LOG(LogTemp, Warning, TEXT("enumerateChunksInRadius: (%d), xCenter(%d), yCenter(%d), ns(%lld)"), chunksInRadius.Num(), xCenter, yCenter, nanos);
+  }
+
+  void
+  moveChunksOutsideRadiusToArray(
+    TMap<FIntVector, AChunk*> &chunksLoaded, // will be removed from this map
+    TArray<AChunk*> &chunksOutside,          // will be put in this array
+    const FVector2D center,
+    const float radius,
+    const float chunkSize)
+  {
+    const auto startTime = clock_t::now();
+
+    chunksOutside.Reset();
+
+    auto chunkIsOutside = [=](const FIntVector chunk)
+    {
+      return (FVector2D{chunk.X*chunkSize, chunk.Y*chunkSize}-center).SizeSquared() > radius*radius;
+    };
+
+    for( auto it = chunksLoaded.CreateIterator(); it; ++it )
+      if( chunkIsOutside(it.Key()))
+      {
+        chunksOutside.Push(it.Value());
+        it.RemoveCurrent();
+      }
+    
+    const auto endTime = clock_t::now();
+    const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime-startTime).count();
+
+    if( const auto numUnloaded = chunksOutside.Num())
+      UE_LOG(LogTemp, Warning, TEXT("unloadChunksBeyondRadius: numChunksUnloaded(%d), numChunksStillLoaded(%d), ns(%lld)"), numUnloaded, chunksLoaded.Num(), nanos);
   }
 } // namespace
 
@@ -93,7 +107,11 @@ namespace
 
 struct AProceduralLandscape::Private
 {
-  TArray<FIntVector> chunksInRadius;
+  TArray<FIntVector> chunksInRadius_array; // order matters
+  TArray<FIntVector> chunksToLoad_array;   // order matters
+  TSet<FIntVector> chunksToLoad_set;       // presence matters
+  TMap<FIntVector, AChunk*> chunksLoaded;  // presence matters
+  TArray<AChunk*> chunksToUnload_array;
 };
 
 //==============================================================================
@@ -118,14 +136,37 @@ void AProceduralLandscape::Tick(float DeltaTime)
 {
   Super::Tick(DeltaTime);
 
-  const FVector playerLocation = GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation();
-  // UE_LOG(LogTemp, Warning, TEXT("PlayerLocation: (%f, %f, %f)"), playerLocation.X, playerLocation.Y, playerLocation.Z);
-  enumerateChunksInRadius(p->chunksInRadius, {playerLocation.X, playerLocation.Y}, LoadRadius, ChunkSize);
+  // TODO: get just-created chunks from workers
+  // TODO: discard any beyond unload radius, before creating actors
+  // TODO: don't create actors until after the chunksToLoad has been sorted, at the bottom of this function
 
-  // TODO
-  //   get local player world location
-  //   enque chunks in LoadRadius that aren't already loaded
-  //   unload chunks beyond UnloadRadius
+  const FVector2D playerLocation2D{ GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation() };
+  
+  moveChunksOutsideRadiusToArray(p->chunksLoaded, p->chunksToUnload_array, playerLocation2D, UnloadRadius, ChunkSize);
+
+  enumerateChunksInRadius(p->chunksInRadius_array, playerLocation2D, LoadRadius, ChunkSize);
+
+  for( auto chunkInRadius : p->chunksInRadius_array )
+    if( !p->chunksLoaded.Contains(chunkInRadius) && !p->chunksToLoad_set.Contains(chunkInRadius) )
+    {
+      p->chunksToLoad_array.Push(chunkInRadius);
+      p->chunksToLoad_set.Add(chunkInRadius);
+    }
+
+  if(!p->chunksToLoad_array.IsEmpty())
+    UE_LOG(LogTemp, Warning, TEXT("loading %d new chunks"), p->chunksToLoad_array.Num());
+
+  for( auto chunkToLoad : p->chunksToLoad_array)
+    if( !p->chunksLoaded.Contains(chunkToLoad))
+      p->chunksLoaded.Add(chunkToLoad, nullptr);
+
+  // TODO: submit work to workers
+
+  // TODO: create actors from just-created chunks collected at the top of this function
+
+  // DELETE (just for testing)
+  p->chunksToLoad_array.Reset();
+  p->chunksToLoad_set.Reset();
 }
 
 // Called when the game starts or when spawned

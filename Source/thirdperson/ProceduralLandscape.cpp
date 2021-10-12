@@ -31,37 +31,36 @@ namespace
 
   void
   enumerateChunksInRadius(
-    TArray<FIntVector2> &chunksInRadius,
+    TArray<FIntVector2>& chunksInRadius,
     const FVector2D center,
     const float radius,
     const float chunkSize)
   {
     const auto startTime = clock_t::now();
-    
+
     const int32 chunksPerSide = int32(radius * 2.f / chunkSize);
     const int32 maxExpectedNumChunks = chunksPerSide * chunksPerSide;
-    
+
     chunksInRadius.Empty(maxExpectedNumChunks);
 
     // coordinates of center of chunk nearest 'center' in whole terms of chunkSize from world origin
-    const int32 xCenter = int32(std::floor((center.X + 0.5f * chunkSize)/chunkSize));
-    const int32 yCenter = int32(std::floor((center.Y + 0.5f * chunkSize)/chunkSize));
+    const int32 xCenter = int32(std::floor((center.X + 0.5f * chunkSize) / chunkSize));
+    const int32 yCenter = int32(std::floor((center.Y + 0.5f * chunkSize) / chunkSize));
 
     auto emplaceIfInRadius = [=,&chunksInRadius](const int32 x, const int32 y)
     {
-      return (chunkIsInRadius(x, y, chunkSize, center, radius*radius)) ? (chunksInRadius.Emplace(x, y), true) : false;
+      return
+        (chunkIsInRadius(x, y, chunkSize, center, radius * radius))
+          ? (chunksInRadius.Emplace(x, y), true)
+          : false;
     };
 
     // check center chunk
-    if(!emplaceIfInRadius(xCenter, yCenter))
-    {
-      UE_LOG(LogTemp, Warning, TEXT("ProceduralLandscape: center not in radius: xCenter(%d), yCenter(%d), radius(%f)"), xCenter, yCenter, radius);
-      
+    if (!emplaceIfInRadius(xCenter, yCenter))
       return;
-    }
 
     // check chunks in an expanding square around the center chunk
-    for(int32 d=1;;++d)
+    for (int32 d = 1;; ++d)
     {
       const int32 numChunks = chunksInRadius.Num();
 
@@ -70,27 +69,43 @@ namespace
       //       and to avoid missing chunks just inside the radius.
 
       // +x
-      for(int32 o=0,any;o<d;)
-        if((any=0, any+=emplaceIfInRadius(xCenter+d,yCenter+o), any+=emplaceIfInRadius(xCenter+d,yCenter-(++o)), any==0))
+      for (int32 o = 0, any; o < d;)
+        if ((
+          any = 0,
+          any += emplaceIfInRadius(xCenter + d, yCenter + o),
+          any += emplaceIfInRadius(xCenter + d, yCenter - (++o)),
+          any == 0))
           break;
-    
+
       // -x
-      for(int32 o=0,any;o<d;)
-        if((any=0, any+=emplaceIfInRadius(xCenter-d,yCenter-o), any+=emplaceIfInRadius(xCenter-d,yCenter+(++o)), any==0))
+      for (int32 o = 0, any; o < d;)
+        if ((
+          any = 0,
+          any += emplaceIfInRadius(xCenter - d, yCenter - o),
+          any += emplaceIfInRadius(xCenter - d, yCenter + (++o)),
+          any == 0))
           break;
-      
+
       // +y
-      for(int32 o=0,any;o<d;)
-        if((any=0, any+=emplaceIfInRadius(xCenter-o,yCenter+d), any+=emplaceIfInRadius(xCenter+(++o),yCenter+d), any==0))
+      for (int32 o = 0, any; o < d;)
+        if ((
+          any = 0,
+          any += emplaceIfInRadius(xCenter - o, yCenter + d),
+          any += emplaceIfInRadius(xCenter + (++o), yCenter + d),
+          any == 0))
           break;
 
       // -y
-      for(int32 o=0,any;o<d;)
-        if((any=0, any+=emplaceIfInRadius(xCenter+o,yCenter-d), any+=emplaceIfInRadius(xCenter-(++o),yCenter-d), any==0))
+      for (int32 o = 0, any; o < d;)
+        if ((
+          any = 0,
+          any += emplaceIfInRadius(xCenter + o, yCenter - d),
+          any += emplaceIfInRadius(xCenter - (++o), yCenter - d),
+          any == 0))
           break;
 
       // check if any chunks were found in radius; if not then stop looking
-      if(chunksInRadius.Num()==numChunks)
+      if (chunksInRadius.Num() == numChunks)
         break;
     }
 

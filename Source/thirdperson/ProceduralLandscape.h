@@ -8,10 +8,9 @@
 UCLASS()
 class THIRDPERSON_API AProceduralLandscape : public AActor
 {
-	GENERATED_BODY()
-	
-public:
+  GENERATED_BODY()
 
+public:
   /** Chunks with centers within this radius of the first person player will be loaded automatically. */
   UPROPERTY(EditAnywhere, meta=(ClampMin="1000.0", ClampMax="10000000.0"))
   float LoadRadius = 1000.f;
@@ -33,16 +32,16 @@ public:
   UMaterialInterface* LandscapeMaterial;
 
   //------------------------------------------------------------------------------
-  
-	AProceduralLandscape();
+
+  AProceduralLandscape();
   ~AProceduralLandscape() override;
 
-	void Tick(float DeltaTime) override;
+  void Tick(float DeltaTime) override;
 
 protected:
-	void BeginPlay() override;
-  
+  void BeginPlay() override;
+
 private:
   struct Private;
-  Private *p;
+  Private* p;
 };

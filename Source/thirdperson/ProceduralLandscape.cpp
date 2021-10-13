@@ -184,15 +184,12 @@ namespace
   //------------------------------------------------------------------------------
 
   void
-  moveChunksOutsideRadiusToArray(
+  destroyChunksOutsideRadius(
     TMap<FIntVector, AChunk*> &chunksLoaded, // will be removed from this map
-    TArray<AChunk*> &chunksOutside,          // will be put in this array
     const FVector2D center,
     const float radius,
     const float chunkSize)
   {
-    chunksOutside.Reset();
-
     auto chunkIsOutside = [=](const FIntVector chunk)
     {
       return (FVector2D{chunk.X*chunkSize, chunk.Y*chunkSize}-center).SizeSquared() > radius*radius;
@@ -201,9 +198,8 @@ namespace
     for( auto it = chunksLoaded.CreateIterator(); it; ++it )
       if( chunkIsOutside(it.Key()))
       {
-        AChunk*aChunk = it.Value();
-        chunksOutside.Push(it.Value());
-        it.Value() = nullptr;
+        // it.Value()->RemoveFromRoot(); // not sure if I need to do this
+        it.Value()->Destroy();
         it.RemoveCurrent();
       }
   }
@@ -376,35 +372,8 @@ void AProceduralLandscape::Tick(float DeltaTime)
   
   //- - - - - - - - - - - - - - - - - - - - 
 
-  // get fresh chunks
-  p->chunksGenerated = p->meshGenerator->getCompletedWork(std::move(p->chunksGenerated));
-  
-  // update set of chunksLoading AND discard fresh chunks that are now outside of UnloadRadius
-  for( auto &workUnit : p->chunksGenerated )
-  {
-    p->chunksLoading.Remove(workUnit->chunkLocation);
-    
-    if(const auto [x,y,z] = workUnit->chunkLocation;
-      (FVector2D{x*ChunkSize,y*ChunkSize}-playerLocation2D).SizeSquared() <= UnloadRadius*UnloadRadius)
-        p->chunksGeneratedAndInRadius.Push(std::move(workUnit));
-    else
-      p->putUnusedWorkUnit(std::move(workUnit));
-  }
-  p->chunksGenerated.Reset();
-  // don't create actors until after the chunksToLoad has been sorted, at the bottom of this function
-  
-  //- - - - - - - - - - - - - - - - - - - - 
-
   // check if old chunks need to be unloaded
-  moveChunksOutsideRadiusToArray(p->chunksLoaded, p->chunksToUnload, playerLocation2D, UnloadRadius, ChunkSize);
-  for( AChunk *&aChunk : p->chunksToUnload )
-  {
-    // UE_LOG(LogTemp, Warning, TEXT("destroying AChunk (%p)"), aChunk);
-    if( !aChunk->Destroy())
-      UE_LOG(LogTemp, Warning, TEXT("can't destroy AChunk (%p)"), aChunk);
-    aChunk = nullptr;
-  }
-  p->chunksToUnload.Reset();
+  destroyChunksOutsideRadius(p->chunksLoaded, playerLocation2D, UnloadRadius, ChunkSize);
   
   //- - - - - - - - - - - - - - - - - - - - 
   
@@ -424,6 +393,24 @@ void AProceduralLandscape::Tick(float DeltaTime)
   
   //- - - - - - - - - - - - - - - - - - - - 
 
+  // get fresh chunks
+  p->chunksGenerated = p->meshGenerator->getCompletedWork(std::move(p->chunksGenerated));
+  
+  // update set of chunksLoading AND discard fresh chunks that are now outside of UnloadRadius
+  for( auto &workUnit : p->chunksGenerated )
+  {
+    p->chunksLoading.Remove(workUnit->chunkLocation);
+    
+    if(const auto [x,y,z] = workUnit->chunkLocation;
+      (FVector2D{x*ChunkSize,y*ChunkSize}-playerLocation2D).SizeSquared() <= UnloadRadius*UnloadRadius)
+        p->chunksGeneratedAndInRadius.Push(std::move(workUnit));
+    else
+      p->putUnusedWorkUnit(std::move(workUnit));
+  }
+  p->chunksGenerated.Reset();
+  
+  //- - - - - - - - - - - - - - - - - - - - 
+
   // start generating meshes (loading) chunks asynchronously
   for( const auto &workUnit : p->chunksToGenerate )
     p->chunksLoading.Add(workUnit->chunkLocation);
@@ -440,10 +427,12 @@ void AProceduralLandscape::Tick(float DeltaTime)
     chunkActor->mesh->SetMaterial(0, LandscapeMaterial);
     chunkActor->SetFolderPath("/Chunks");
 
-    // chunk->SetActorTransform(GetTransform());
     const FVector chunkTranslation = (FVector{workUnit->chunkLocation} - 0.5f) * ChunkSize;
     UGameplayStatics::FinishSpawningActor(chunkActor, FTransform{chunkTranslation});
 
+    if(p->chunksLoaded.Contains(workUnit->chunkLocation))
+      UE_LOG(LogTemp, Warning, TEXT("ERROR: trying to add loaded chunk that is already loaded"));
+      
     p->chunksLoaded.Add(workUnit->chunkLocation, chunkActor);
     
     p->putUnusedWorkUnit(std::move(workUnit));

@@ -165,21 +165,22 @@ namespace
     const float verticalScale = workUnit.verticalScale;
     const FVector2D minCorner = chunkLocationMinCornerCoordinates(workUnit.chunkLocation, chunkSize);
 
+    const float stepSize = chunkSize / resolution;
+
     // prepare pointCache
     pointCache.points.Reset((resolution + 3) * (resolution + 3));
     for (int32 y = -1; y <= resolution + 1; ++y)
     {
-      const float yFrac = float(y) / resolution;
-      const float yPos = yFrac * chunkSize;
+      const float yPos = y * stepSize;
       const float yNoisePos = (minCorner.Y + yPos) * 0.001f;
 
       for (int32 x = -1; x <= resolution + 1; ++x)
       {
-        const float xFrac = float(x) / resolution;
-        const float xPos = xFrac * chunkSize;
+        const float xPos = x * stepSize;
         const float xNoisePos = (minCorner.X + xPos) * 0.001f;
 
-        const float z = verticalScale * FMath::PerlinNoise2D(FVector2D{xNoisePos, yNoisePos});
+        float z = verticalScale * FMath::PerlinNoise2D(FVector2D{xNoisePos, yNoisePos});
+        z = 1.f - abs(0.0 - z);
 
         pointCache.points.Emplace(xPos, yPos, z);
       }
@@ -227,13 +228,21 @@ namespace
     int32 count = 0;
 
     // set triangle indices
-    for( int32 y = 0, index = 0; y < resolution; ++y, ++index )
-      for( int32 x = 0; x < resolution; ++x, ++index )
-      {
-        triangles.Append({index, index + resolution + 1, index + 1});
-        triangles.Append({index + 1, index + resolution + 1, index + resolution + 2});
-        ++count;
-      }
+    for (int32 y = 0, index = 0; y < resolution; ++y, ++index)
+      if (y & 1) // odd rows
+        for (int32 x = 0; x < resolution; ++x, ++index)
+        {
+          triangles.Append({index, index + resolution + 1, index + 1});
+          triangles.Append({index + 1, index + resolution + 1, index + resolution + 2});
+          ++count;
+        }
+      else // even rows
+        for (int32 x = 0; x < resolution; ++x, ++index)
+        {
+          triangles.Append({index, index + resolution + 1, index + 1});
+          triangles.Append({index + 1, index + resolution + 1, index + resolution + 2});
+          ++count;
+        }
   }
 
   //------------------------------------------------------------------------------
@@ -485,7 +494,10 @@ void AProceduralLandscape::Tick(float DeltaTime)
     chunkActor->mesh->SetMaterial(0, LandscapeMaterial);
     chunkActor->SetFolderPath("/Chunks");
 
-    const FVector chunkTranslation = (FVector{workUnit->chunkLocation} - 0.5f) * ChunkSize;
+    const FVector chunkTranslation{
+      (workUnit->chunkLocation.X - 0.5f) * ChunkSize,
+      (workUnit->chunkLocation.Y - 0.5f) * ChunkSize,
+      0.f};
     UGameplayStatics::FinishSpawningActor(chunkActor, FTransform{chunkTranslation});
 
     if(p->chunksLoaded.Contains(workUnit->chunkLocation))

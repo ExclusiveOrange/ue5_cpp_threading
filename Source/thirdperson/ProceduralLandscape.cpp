@@ -195,20 +195,24 @@ namespace
     (auto& ... object) { (object.Reset(totalNumVertices), ...); }
       (vertices, normals, uv0, colors, tangents);
 
+    const float rStepSize = resolution / chunkSize;
+
     // set vertex values
     for (int32 y = 0; y <= resolution; ++y)
       for (int32 x = 0; x <= resolution; ++x)
       {
-        // TODO: calculate mesh height for this point
-
-        const FVector xp = pointAt(x + 1, y);
+        const FVector yn = pointAt(x, y - 1);
         const FVector xn = pointAt(x - 1, y);
         const FVector xy = pointAt(x, y);
+        const FVector xp = pointAt(x + 1, y);
         const FVector yp = pointAt(x, y + 1);
-        const FVector yn = pointAt(x, y - 1);
 
-        FVector normal = FVector::CrossProduct(xp-xn, yp-yn);
+        // thanks https://stackoverflow.com/a/21660173
+        // for the simple and good looking normal approximation
+        FVector normal = FVector{ (xn.Z - xp.Z) * rStepSize, (yn.Z - yp.Z) * rStepSize, 2.f}.GetUnsafeNormal();
         normal.Normalize();
+
+        // TODO: calculate tangents
         
         vertices.Emplace(xy);
         normals.Emplace(normal);

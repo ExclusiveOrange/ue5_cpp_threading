@@ -2,10 +2,12 @@
 
 
 #include "ProceduralLandscape.h"
+
 #include "Chunk.h"
-#include "ProceduralMeshComponent.h"
+#include "Core/Public/Math/UnrealMathUtility.h"
 #include "HAL/RunnableThread.h"
 #include "Kismet/GameplayStatics.h"
+#include "ProceduralMeshComponent.h"
 
 #include <chrono>
 #include <cmath>
@@ -14,6 +16,7 @@
 #include <memory>
 #include <mutex>
 #include <stack>
+
 
 namespace
 {
@@ -32,12 +35,27 @@ namespace
   struct GenerationWorkUnit
   {
     MeshData meshData{}; // local coordinates always from (0,0) to (size,size)
-    FIntVector chunkLocation{}; // world coordinates of center are (chunkLocation - 0.5) * size
+    FIntVector chunkLocation{}; // world coordinates of center are chunkLocation * size
     int32 resolution{1};
     float size{1.f};
+    float verticalScale{1.f};
+  };
+
+  struct MeshPointCache
+  {
+    TArray<FVector> points;
   };
 
   //==============================================================================
+
+  FVector2D
+  chunkLocationMinCornerCoordinates(
+    const FIntVector chunkLocation,
+    const float chunkSize)
+  {
+    const auto [x,y,z] = chunkLocation;
+    return FVector2D{x - 0.5f, y - 0.5f} * chunkSize;
+  }
   
   void
   createProceduralMeshSection(
@@ -92,7 +110,6 @@ namespace
            12  4  0  3 11
            16  8  2  6 19
            24 18 10 14 22
-
     
       r = 3 (suppose radius is small enough that corners are outside and thus not registered)
 
@@ -138,36 +155,70 @@ namespace
   
   //------------------------------------------------------------------------------
 
-  void generateMesh(MeshData &meshData, const int32 resolution, const float size)
+  void generateMesh(GenerationWorkUnit &workUnit, MeshPointCache &pointCache)
   {
     // UE_LOG(LogTemp, Warning, TEXT("generateMesh(): xSteps(%d), ySteps(%d)"), meshParameters.xSteps, meshParameters.ySteps);
+
+    auto &[vertices, triangles, normals, uv0, colors, tangents] = workUnit.meshData;
+    const int32 resolution = workUnit.resolution;
+    const float chunkSize = workUnit.size;
+    const float verticalScale = workUnit.verticalScale;
+    const FVector2D minCorner = chunkLocationMinCornerCoordinates(workUnit.chunkLocation, chunkSize);
+
+    // prepare pointCache
+    pointCache.points.Reset((resolution + 3) * (resolution + 3));
+    for (int32 y = -1; y <= resolution + 1; ++y)
+    {
+      const float yFrac = float(y) / resolution;
+      const float yPos = yFrac * chunkSize;
+      const float yNoisePos = (minCorner.Y + yPos) * 0.001f;
+
+      for (int32 x = -1; x <= resolution + 1; ++x)
+      {
+        const float xFrac = float(x) / resolution;
+        const float xPos = xFrac * chunkSize;
+        const float xNoisePos = (minCorner.X + xPos) * 0.001f;
+
+        const float z = verticalScale * FMath::PerlinNoise2D(FVector2D{xNoisePos, yNoisePos});
+
+        pointCache.points.Emplace(xPos, yPos, z);
+      }
+    }
+
+    auto pointAt = [&points=pointCache.points,w=resolution+3](const int32 x, const int32 y)
+    {
+      return points[1 + x + (1 + y) * w];
+    };
     
     // make arrays big enough to hold all vertices
     [totalNumVertices=(resolution + 1) * (resolution + 1)]
     (auto& ... object) { (object.Reset(totalNumVertices), ...); }
-      (meshData.vertices, meshData.normals, meshData.uv0, meshData.colors, meshData.tangents);
+      (vertices, normals, uv0, colors, tangents);
 
     // set vertex values
     for (int32 y = 0; y <= resolution; ++y)
-    {
-      const float yFrac = float(y) / resolution;
-      const float yPos = yFrac * size;
-
       for (int32 x = 0; x <= resolution; ++x)
       {
-        const float xFrac = float(x) / resolution;
-        const float xPos = xFrac * size;
+        // TODO: calculate mesh height for this point
 
-        meshData.vertices.Emplace(xPos, yPos, 0.f);
-        meshData.normals.Emplace(0, 0, 1.f);
-        meshData.uv0.Emplace(xPos * 0.1f, yPos * 0.1f);
-        meshData.colors.Emplace(1.f, 1.f, 1.f, 1.f);
-        meshData.tangents.Emplace(1.f, 0.f, 0.f);
+        const FVector xp = pointAt(x + 1, y);
+        const FVector xn = pointAt(x - 1, y);
+        const FVector xy = pointAt(x, y);
+        const FVector yp = pointAt(x, y + 1);
+        const FVector yn = pointAt(x, y - 1);
+
+        FVector normal = FVector::CrossProduct(xp-xn, yp-yn);
+        normal.Normalize();
+        
+        vertices.Emplace(xy);
+        normals.Emplace(normal);
+        uv0.Emplace(xy.X * 0.01f, xy.Y * 0.01f);
+        colors.Emplace(1.f, 1.f, 1.f, 1.f);
+        tangents.Emplace(1.f, 0.f, 0.f);
       }
-    }
 
     // make triangles array big enough to hold all triangles
-    meshData.triangles.Reset(resolution * resolution * 2 * 3);
+    triangles.Reset(resolution * resolution * 2 * 3);
 
     int32 count = 0;
 
@@ -175,8 +226,8 @@ namespace
     for( int32 y = 0, index = 0; y < resolution; ++y, ++index )
       for( int32 x = 0; x < resolution; ++x, ++index )
       {
-        meshData.triangles.Append({index, index + resolution + 1, index + 1});
-        meshData.triangles.Append({index + 1, index + resolution + 1, index + resolution + 2});
+        triangles.Append({index, index + resolution + 1, index + 1});
+        triangles.Append({index + 1, index + resolution + 1, index + resolution + 2});
         ++count;
       }
   }
@@ -241,6 +292,8 @@ namespace
     {
       UE_LOG(LogTemp, Warning, TEXT("MeshGenerator::Run() starting"));
 
+      MeshPointCache pointCache;
+
       for (;;)
       {
         std::unique_ptr<GenerationWorkUnit> workUnit;
@@ -257,7 +310,7 @@ namespace
         }
 
         // UE_LOG(LogTemp, Warning, TEXT("MeshGenerator::Run() generating mesh"));
-        generateMesh(workUnit->meshData, workUnit->resolution, workUnit->size);
+        generateMesh(*workUnit, pointCache);
 
         {
           std::lock_guard lock(doneMutex);
@@ -388,6 +441,7 @@ void AProceduralLandscape::Tick(float DeltaTime)
       workUnit->chunkLocation = chunkInRadius;
       workUnit->resolution = StepsPerChunk;
       workUnit->size = ChunkSize;
+      workUnit->verticalScale = VerticalScale;
       p->chunksToGenerate.Emplace(std::move(workUnit));
     }
   

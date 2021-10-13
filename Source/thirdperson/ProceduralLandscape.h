@@ -27,7 +27,11 @@ public:
   UPROPERTY(EditAnywhere, meta=(ClampMin="1000.0", ClampMax="10000000.0"))
   float UnloadRadius = 1333.f;
 
-  /** Applied to every chunk. */
+  /** Landscape Z-values will vary between 0.0 and this scale value. */
+  UPROPERTY(EditAnywhere, meta=(ClampMin="1.0", ClampMax="10000.0"))
+  float VerticalScale = 10.f;
+
+  /** Applied to every chunk. UV scale is 1.0 per 100.0 world units. */
   UPROPERTY(EditAnywhere, BlueprintReadWrite)
   UMaterialInterface* LandscapeMaterial;
 

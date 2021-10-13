@@ -15,5 +15,6 @@ class THIRDPERSON_API AChunk : public AActor
 public:	
 	AChunk();
 
+  UPROPERTY()
   UProceduralMeshComponent *mesh;
 };

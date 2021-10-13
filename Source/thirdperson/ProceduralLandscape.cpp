@@ -15,8 +15,8 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stack>
-
 
 namespace
 {
@@ -38,6 +38,7 @@ namespace
     FIntVector chunkLocation{}; // world coordinates of center are chunkLocation * size
     int32 resolution{1};
     float size{1.f};
+    float horizontalNoiseScale{1.f};
     float verticalScale{1.f};
   };
 
@@ -45,6 +46,29 @@ namespace
   {
     TArray<FVector> points;
   };
+
+  std::optional<FVector>
+  tryGetPlayerLocation(const AActor *anyActorInWorld)
+  {
+    if (const auto actor = anyActorInWorld)
+      if (const auto world = actor->GetWorld())
+        if (const auto firstPlayerController = world->GetFirstPlayerController())
+          if (const auto pawn = firstPlayerController->GetPawn())
+            return pawn->GetActorLocation();
+
+    return std::nullopt;
+  }
+
+  std::optional<FVector>
+  tryGetEditorViewLocation(const AActor *anyActorInWorld)
+  {
+    if (const auto actor = anyActorInWorld)
+      if (const auto world = actor->GetWorld())
+        if(const auto &viewLocations = world->ViewLocationsRenderedLastFrame; viewLocations.Num() > 0)
+          return viewLocations[0];
+
+    return std::nullopt;
+  }
 
   //==============================================================================
 
@@ -163,6 +187,8 @@ namespace
     const int32 resolution = workUnit.resolution;
     const float chunkSize = workUnit.size;
     const float verticalScale = workUnit.verticalScale;
+    const float rNoiseScale = 1.f / workUnit.horizontalNoiseScale;
+    
     const FVector2D minCorner = chunkLocationMinCornerCoordinates(workUnit.chunkLocation, chunkSize);
 
     const float stepSize = chunkSize / resolution;
@@ -172,12 +198,12 @@ namespace
     for (int32 y = -1; y <= resolution + 1; ++y)
     {
       const float yPos = y * stepSize;
-      const float yNoisePos = (minCorner.Y + yPos) * 0.001f;
+      const float yNoisePos = (minCorner.Y + yPos) * rNoiseScale;
 
       for (int32 x = -1; x <= resolution + 1; ++x)
       {
         const float xPos = x * stepSize;
-        const float xNoisePos = (minCorner.X + xPos) * 0.001f;
+        const float xNoisePos = (minCorner.X + xPos) * rNoiseScale;
 
         float z = verticalScale * FMath::PerlinNoise2D(FVector2D{xNoisePos, yNoisePos});
 
@@ -412,6 +438,7 @@ AProceduralLandscape::AProceduralLandscape()
   // not sure if I need all of these but it seems Unreal changes how ticks work from version to version and this combo works
   PrimaryActorTick.bCanEverTick = true;
   PrimaryActorTick.bRunOnAnyThread = false; // only run on main thread because we need to create world objects
+  // PrimaryActorTick.bStartWithTickEnabled = true;
   PrimaryActorTick.SetTickFunctionEnable(true); // this is necessary to get ticks to work without a Blueprint as of 2021.10.08
 }
 
@@ -425,7 +452,15 @@ void AProceduralLandscape::Tick(float DeltaTime)
 {
   Super::Tick(DeltaTime);
 
-  const FVector2D playerLocation2D{ GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation() };
+  // carefully try to get player location, which might not exist if for example the player was killed
+  FVector2D playerLocation2D{};
+  if( auto maybePlayerLocation = tryGetPlayerLocation(this))
+    playerLocation2D = FVector2D{ *maybePlayerLocation };
+  else
+    if( auto maybeEditorViewLocation = tryGetEditorViewLocation(this))
+      playerLocation2D = FVector2D{ *maybeEditorViewLocation };
+    else
+      return; // couldn't get any location
   
   //- - - - - - - - - - - - - - - - - - - - 
 
@@ -445,6 +480,7 @@ void AProceduralLandscape::Tick(float DeltaTime)
       workUnit->chunkLocation = chunkInRadius;
       workUnit->resolution = StepsPerChunk;
       workUnit->size = ChunkSize;
+      workUnit->horizontalNoiseScale = HorizontalNoiseScale;
       workUnit->verticalScale = VerticalScale;
       p->chunksToGenerate.Emplace(std::move(workUnit));
     }
@@ -507,5 +543,3 @@ void AProceduralLandscape::BeginPlay()
 	Super::BeginPlay();
 	
 }
-
-

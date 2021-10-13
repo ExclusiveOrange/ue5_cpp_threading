@@ -180,7 +180,6 @@ namespace
         const float xNoisePos = (minCorner.X + xPos) * 0.001f;
 
         float z = verticalScale * FMath::PerlinNoise2D(FVector2D{xNoisePos, yNoisePos});
-        z = 1.f - abs(0.0 - z);
 
         pointCache.points.Emplace(xPos, yPos, z);
       }
@@ -229,14 +228,6 @@ namespace
 
     // set triangle indices
     for (int32 y = 0, index = 0; y < resolution; ++y, ++index)
-      if (y & 1) // odd rows
-        for (int32 x = 0; x < resolution; ++x, ++index)
-        {
-          triangles.Append({index, index + resolution + 1, index + 1});
-          triangles.Append({index + 1, index + resolution + 1, index + resolution + 2});
-          ++count;
-        }
-      else // even rows
         for (int32 x = 0; x < resolution; ++x, ++index)
         {
           triangles.Append({index, index + resolution + 1, index + 1});

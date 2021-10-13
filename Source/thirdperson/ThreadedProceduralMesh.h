@@ -6,20 +6,20 @@
 #include "GameFramework/Actor.h"
 #include "ThreadedProceduralMesh.generated.h"
 
-USTRUCT(BlueprintType)
-struct FChunkCreationParameters
-{
-  GENERATED_BODY()
-
-  UPROPERTY(BlueprintReadWrite)
-  FVector WorldLocation;
-  
-  UPROPERTY(BlueprintReadWrite)
-  float TotalWidth; // square
-  
-  UPROPERTY(BlueprintReadWrite, meta=(ClampMin="1", ClampMax="255"))
-  int32 NumSteps; // square
-};
+// USTRUCT(BlueprintType)
+// struct FChunkCreationParameters
+// {
+//   GENERATED_BODY()
+//
+//   UPROPERTY(BlueprintReadWrite)
+//   FVector WorldLocation;
+//   
+//   UPROPERTY(BlueprintReadWrite)
+//   float TotalWidth; // square
+//   
+//   UPROPERTY(BlueprintReadWrite, meta=(ClampMin="1", ClampMax="255"))
+//   int32 NumSteps; // square
+// };
 
 UCLASS()
 class THIRDPERSON_API AThreadedProceduralMesh : public AActor
@@ -30,8 +30,8 @@ public:
   UPROPERTY(EditAnywhere, BlueprintReadWrite)
   UMaterialInterface* Material;
 
-  UPROPERTY(BlueprintReadWrite)
-  FChunkCreationParameters ChunkCreationParameters;
+  // UPROPERTY(BlueprintReadWrite)
+  // FChunkCreationParameters ChunkCreationParameters;
 
   UPROPERTY(EditAnywhere, meta = (ClampMin = "1", ClampMax = "255"))
   int32 xSteps = 1;

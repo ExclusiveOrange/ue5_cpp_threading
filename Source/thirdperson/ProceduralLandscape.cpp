@@ -3,13 +3,53 @@
 
 #include "ProceduralLandscape.h"
 #include "Chunk.h"
+#include "ProceduralMeshComponent.h"
+#include "HAL/RunnableThread.h"
+#include "Kismet/GameplayStatics.h"
 
-#include <cmath>
 #include <chrono>
+#include <cmath>
+#include <condition_variable>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <stack>
 
 namespace
 {
   using clock_t = std::chrono::high_resolution_clock;
+  
+  struct MeshData
+  {
+    TArray<FVector> vertices;
+    TArray<int32> triangles;
+    TArray<FVector> normals;
+    TArray<FVector2D> uv0;
+    TArray<FLinearColor> colors;
+    TArray<FProcMeshTangent> tangents;
+  };
+
+  struct GenerationWorkUnit
+  {
+    MeshData meshData{}; // local coordinates always from (0,0) to (size,size)
+    FIntVector chunkLocation{}; // world coordinates of center are (chunkLocation - 0.5) * size
+    int32 resolution{1};
+    float size{1.f};
+  };
+
+  //==============================================================================
+  
+  void
+  createProceduralMeshSection(
+    UProceduralMeshComponent* mesh,
+    const int32 sectionIndex,
+    const MeshData& meshData)
+  {
+    const auto& [vertices, triangles, normals, uv0, colors, tangents] = meshData;
+    mesh->CreateMeshSection_LinearColor(sectionIndex, vertices, triangles, normals, uv0, colors, tangents, true);
+  }
+  
+  //==============================================================================
   
   void
   enumerateChunksInRadius(
@@ -18,8 +58,6 @@ namespace
     const float radius,
     const float chunkSize)
   {
-    const auto startTime = clock_t::now();
-
     chunksInRadius.Reset();
     
     auto emplaceIfInRadius = [=,&chunksInRadius](const int32 x, const int32 y)
@@ -34,6 +72,39 @@ namespace
     const int32 xCenter = int32(std::floor((center.X + 0.5f * chunkSize) / chunkSize));
     const int32 yCenter = int32(std::floor((center.Y + 0.5f * chunkSize) / chunkSize));
 
+    /*
+    Example chunk registration order as might be generated in the following loop:
+
+      r = 0
+    
+                  0
+
+      r = 1
+    
+               5  1  7
+               4  0  3
+               8  2  6
+    
+      r = 2
+    
+           21 13  9 17 23
+           20  5  1  7 15
+           12  4  0  3 11
+           16  8  2  6 19
+           24 18 10 14 22
+
+    
+      r = 3 (suppose radius is small enough that corners are outside and thus not registered)
+
+              29 25 33
+           21 13  9 17 23
+        36 20  5  1  7 15 31
+        28 12  4  0  3 11 27
+        32 16  8  2  6 19 35
+           24 18 10 14 22
+              34 26 30
+    */
+
     // start with center chunk
     if (emplaceIfInRadius(xCenter, yCenter))
       // check chunks in an expanding square around the center chunk
@@ -43,7 +114,6 @@ namespace
 
         for(int32 o = 0; o < r;) // orthogonal distance from axial radial
         {
-          
           int any = emplaceIfInRadius(xCenter + r, yCenter + o); // +x +o
           any += emplaceIfInRadius(xCenter - r, yCenter - o);    // -x -o
           any += emplaceIfInRadius(xCenter - o, yCenter + r);    // +y -o
@@ -64,12 +134,54 @@ namespace
         if (chunksInRadius.Num() == numChunksAtStart)
           break;
       }
-
-    const auto endTime = clock_t::now();
-    const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime-startTime).count();
-
-    //UE_LOG(LogTemp, Warning, TEXT("enumerateChunksInRadius: (%d), xCenter(%d), yCenter(%d), ns(%lld)"), chunksInRadius.Num(), xCenter, yCenter, nanos);
   }
+  
+  //------------------------------------------------------------------------------
+
+  void generateMesh(MeshData &meshData, const int32 resolution, const float size)
+  {
+    // UE_LOG(LogTemp, Warning, TEXT("generateMesh(): xSteps(%d), ySteps(%d)"), meshParameters.xSteps, meshParameters.ySteps);
+    
+    // make arrays big enough to hold all vertices
+    [totalNumVertices=(resolution + 1) * (resolution + 1)]
+    (auto& ... object) { (object.Reset(totalNumVertices), ...); }
+      (meshData.vertices, meshData.normals, meshData.uv0, meshData.colors, meshData.tangents);
+
+    // set vertex values
+    for (int32 y = 0; y <= resolution; ++y)
+    {
+      const float yFrac = float(y) / resolution;
+      const float yPos = yFrac * size;
+
+      for (int32 x = 0; x <= resolution; ++x)
+      {
+        const float xFrac = float(x) / resolution;
+        const float xPos = xFrac * size;
+
+        meshData.vertices.Emplace(xPos, yPos, 0.f);
+        meshData.normals.Emplace(0, 0, 1.f);
+        meshData.uv0.Emplace(xPos * 0.1f, yPos * 0.1f);
+        meshData.colors.Emplace(1.f, 1.f, 1.f, 1.f);
+        meshData.tangents.Emplace(1.f, 0.f, 0.f);
+      }
+    }
+
+    // make triangles array big enough to hold all triangles
+    meshData.triangles.Reset(resolution * resolution * 2 * 3);
+
+    int32 count = 0;
+
+    // set triangle indices
+    for( int32 y = 0, index = 0; y < resolution; ++y, ++index )
+      for( int32 x = 0; x < resolution; ++x, ++index )
+      {
+        meshData.triangles.Append({index, index + resolution + 1, index + 1});
+        meshData.triangles.Append({index + 1, index + resolution + 1, index + resolution + 2});
+        ++count;
+      }
+  }
+
+  //------------------------------------------------------------------------------
 
   void
   moveChunksOutsideRadiusToArray(
@@ -79,8 +191,6 @@ namespace
     const float radius,
     const float chunkSize)
   {
-    const auto startTime = clock_t::now();
-
     chunksOutside.Reset();
 
     auto chunkIsOutside = [=](const FIntVector chunk)
@@ -91,27 +201,153 @@ namespace
     for( auto it = chunksLoaded.CreateIterator(); it; ++it )
       if( chunkIsOutside(it.Key()))
       {
+        AChunk*aChunk = it.Value();
         chunksOutside.Push(it.Value());
+        it.Value() = nullptr;
         it.RemoveCurrent();
       }
-    
-    const auto endTime = clock_t::now();
-    const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime-startTime).count();
-
-    if( const auto numUnloaded = chunksOutside.Num())
-      UE_LOG(LogTemp, Warning, TEXT("unloadChunksBeyondRadius: numChunksUnloaded(%d), numChunksStillLoaded(%d), ns(%lld)"), numUnloaded, chunksLoaded.Num(), nanos);
   }
+
+  //==============================================================================
+
+  class MeshGenerator : public FRunnable
+  {
+    std::mutex workMutex;
+    std::condition_variable workConditionVariable; // main notifies workers
+    std::deque<std::unique_ptr<GenerationWorkUnit>> workQueue; // lock before access
+    bool shouldStop{}; // set true then notify workConditionVariable then wait for worker to finish
+
+    std::mutex doneMutex;
+    TArray<std::unique_ptr<GenerationWorkUnit>> doneWork; // lock before access
+
+    FRunnableThread* thread;
+
+  public:
+    MeshGenerator()
+      : thread{FRunnableThread::Create(this, TEXT("MeshGeneratorThread"))}
+    {}
+
+    ~MeshGenerator() override
+    {
+      if (thread)
+      {
+        thread->Kill(true);
+        delete thread;
+      }
+    }
+
+    //------------------------------------------------------------------------------
+    // FRunnable
+
+    // bool Init() override {}
+
+    uint32 Run() override
+    {
+      UE_LOG(LogTemp, Warning, TEXT("MeshGenerator::Run() starting"));
+
+      for (;;)
+      {
+        std::unique_ptr<GenerationWorkUnit> workUnit;
+
+        {
+          std::unique_lock lock(workMutex);
+          workConditionVariable.wait(lock, [this] { return shouldStop || !workQueue.empty(); });
+
+          if (shouldStop)
+            break;
+
+          workUnit = std::move(workQueue.front());
+          workQueue.pop_front();
+        }
+
+        // UE_LOG(LogTemp, Warning, TEXT("MeshGenerator::Run() generating mesh"));
+        generateMesh(workUnit->meshData, workUnit->resolution, workUnit->size);
+
+        {
+          std::lock_guard lock(doneMutex);
+          doneWork.Push(std::move(workUnit));
+        }
+      }
+
+      UE_LOG(LogTemp, Warning, TEXT("MeshGenerator::Run() stopping"));
+
+      return 0;
+    }
+
+    void Stop() override
+    {
+      shouldStop = true;
+      workConditionVariable.notify_all();
+    }
+
+    // void Exit() override;
+
+    //------------------------------------------------------------------------------
+
+    TArray<std::unique_ptr<GenerationWorkUnit>>
+    getCompletedWork(TArray<std::unique_ptr<GenerationWorkUnit>> emptyArray)
+    {
+      emptyArray.Reset(); // make sure it's empty
+      std::lock_guard lock(doneMutex);
+      return std::exchange(doneWork, std::move(emptyArray));
+    }
+
+    TArray<std::unique_ptr<GenerationWorkUnit>> // the same array but now empty
+    submitWorkToDo(TArray<std::unique_ptr<GenerationWorkUnit>> workUnits)
+    {
+      if(!workUnits.IsEmpty())
+      {
+        {
+          std::lock_guard lock(workMutex);
+          for(auto &workUnit : workUnits)
+            workQueue.push_back(std::move(workUnit));
+        }
+        workConditionVariable.notify_all();
+        workUnits.Reset();
+      }
+      
+      return std::move(workUnits);
+    }
+  };
+
+  //==============================================================================
+
+  struct UnusedWorkUnits
+  {
+    TArray<std::unique_ptr<GenerationWorkUnit>> unusedWorkUnits;
+
+    std::unique_ptr<GenerationWorkUnit>
+    getUnusedWorkUnit()
+    {
+      if (unusedWorkUnits.IsEmpty())
+        return std::make_unique<GenerationWorkUnit>();
+
+      return unusedWorkUnits.Pop(false);
+    };
+
+    void
+    putUnusedWorkUnit(std::unique_ptr<GenerationWorkUnit> workUnit)
+    {
+      unusedWorkUnits.Push(std::move(workUnit));
+    }
+  };
 } // namespace
 
 //==============================================================================
 
-struct AProceduralLandscape::Private
+struct AProceduralLandscape::Private : UnusedWorkUnits
 {
   TArray<FIntVector> chunksInRadius_array; // order matters
-  TArray<FIntVector> chunksToLoad_array;   // order matters
-  TSet<FIntVector> chunksToLoad_set;       // presence matters
+  
+  TArray<std::unique_ptr<GenerationWorkUnit>> chunksToGenerate;            // order matters
+  TArray<std::unique_ptr<GenerationWorkUnit>> chunksGenerated;             // order matters
+  TArray<std::unique_ptr<GenerationWorkUnit>> chunksGeneratedAndInRadius;  // order matters
+  
+  TSet<FIntVector> chunksLoading;       // presence matters
   TMap<FIntVector, AChunk*> chunksLoaded;  // presence matters
-  TArray<AChunk*> chunksToUnload_array;
+  TArray<AChunk*> chunksToUnload;
+
+  std::unique_ptr<MeshGenerator> meshGenerator = std::make_unique<MeshGenerator>();
 };
 
 //==============================================================================
@@ -136,37 +372,83 @@ void AProceduralLandscape::Tick(float DeltaTime)
 {
   Super::Tick(DeltaTime);
 
-  // TODO: get just-created chunks from workers
-  // TODO: discard any beyond unload radius, before creating actors
-  // TODO: don't create actors until after the chunksToLoad has been sorted, at the bottom of this function
-
   const FVector2D playerLocation2D{ GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation() };
   
-  moveChunksOutsideRadiusToArray(p->chunksLoaded, p->chunksToUnload_array, playerLocation2D, UnloadRadius, ChunkSize);
+  //- - - - - - - - - - - - - - - - - - - - 
 
+  // get fresh chunks
+  p->chunksGenerated = p->meshGenerator->getCompletedWork(std::move(p->chunksGenerated));
+  
+  // update set of chunksLoading AND discard fresh chunks that are now outside of UnloadRadius
+  for( auto &workUnit : p->chunksGenerated )
+  {
+    p->chunksLoading.Remove(workUnit->chunkLocation);
+    
+    if(const auto [x,y,z] = workUnit->chunkLocation;
+      (FVector2D{x*ChunkSize,y*ChunkSize}-playerLocation2D).SizeSquared() <= UnloadRadius*UnloadRadius)
+        p->chunksGeneratedAndInRadius.Push(std::move(workUnit));
+    else
+      p->putUnusedWorkUnit(std::move(workUnit));
+  }
+  p->chunksGenerated.Reset();
+  // don't create actors until after the chunksToLoad has been sorted, at the bottom of this function
+  
+  //- - - - - - - - - - - - - - - - - - - - 
+
+  // check if old chunks need to be unloaded
+  moveChunksOutsideRadiusToArray(p->chunksLoaded, p->chunksToUnload, playerLocation2D, UnloadRadius, ChunkSize);
+  for( AChunk *&aChunk : p->chunksToUnload )
+  {
+    // UE_LOG(LogTemp, Warning, TEXT("destroying AChunk (%p)"), aChunk);
+    if( !aChunk->Destroy())
+      UE_LOG(LogTemp, Warning, TEXT("can't destroy AChunk (%p)"), aChunk);
+    aChunk = nullptr;
+  }
+  p->chunksToUnload.Reset();
+  
+  //- - - - - - - - - - - - - - - - - - - - 
+  
+  // get list of chunks which might need to be loaded
   enumerateChunksInRadius(p->chunksInRadius_array, playerLocation2D, LoadRadius, ChunkSize);
 
+  // refine list to chunks which do need to be loaded
   for( auto chunkInRadius : p->chunksInRadius_array )
-    if( !p->chunksLoaded.Contains(chunkInRadius) && !p->chunksToLoad_set.Contains(chunkInRadius) )
+    if( !p->chunksLoaded.Contains(chunkInRadius) && !p->chunksLoading.Contains(chunkInRadius) )
     {
-      p->chunksToLoad_array.Push(chunkInRadius);
-      p->chunksToLoad_set.Add(chunkInRadius);
+      std::unique_ptr<GenerationWorkUnit> workUnit = p->getUnusedWorkUnit();
+      workUnit->chunkLocation = chunkInRadius;
+      workUnit->resolution = StepsPerChunk;
+      workUnit->size = ChunkSize;
+      p->chunksToGenerate.Emplace(std::move(workUnit));
     }
+  
+  //- - - - - - - - - - - - - - - - - - - - 
 
-  if(!p->chunksToLoad_array.IsEmpty())
-    UE_LOG(LogTemp, Warning, TEXT("loading %d new chunks"), p->chunksToLoad_array.Num());
+  // start generating meshes (loading) chunks asynchronously
+  for( const auto &workUnit : p->chunksToGenerate )
+    p->chunksLoading.Add(workUnit->chunkLocation);
+  p->chunksToGenerate = p->meshGenerator->submitWorkToDo(std::move(p->chunksToGenerate));
+  
+  //- - - - - - - - - - - - - - - - - - - - 
 
-  for( auto chunkToLoad : p->chunksToLoad_array)
-    if( !p->chunksLoaded.Contains(chunkToLoad))
-      p->chunksLoaded.Add(chunkToLoad, nullptr);
+  // create actors from just-created chunks collected at the top of this function
+  for( auto &workUnit : p->chunksGeneratedAndInRadius )
+  {
+    AChunk* chunkActor = GetWorld()->SpawnActorDeferred<AChunk>(AChunk::StaticClass(), FTransform());
 
-  // TODO: submit work to workers
+    createProceduralMeshSection(chunkActor->mesh, 0, workUnit->meshData);
+    chunkActor->mesh->SetMaterial(0, LandscapeMaterial);
+    chunkActor->SetFolderPath("/Chunks");
 
-  // TODO: create actors from just-created chunks collected at the top of this function
+    // chunk->SetActorTransform(GetTransform());
+    const FVector chunkTranslation = (FVector{workUnit->chunkLocation} - 0.5f) * ChunkSize;
+    UGameplayStatics::FinishSpawningActor(chunkActor, FTransform{chunkTranslation});
 
-  // DELETE (just for testing)
-  p->chunksToLoad_array.Reset();
-  p->chunksToLoad_set.Reset();
+    p->chunksLoaded.Add(workUnit->chunkLocation, chunkActor);
+    
+    p->putUnusedWorkUnit(std::move(workUnit));
+  }
+  p->chunksGeneratedAndInRadius.Reset();
 }
 
 // Called when the game starts or when spawned

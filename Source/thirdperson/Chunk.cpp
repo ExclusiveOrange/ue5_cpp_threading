@@ -9,4 +9,3 @@ AChunk::AChunk()
   RootComponent = mesh;
 	PrimaryActorTick.bCanEverTick = false;
 }
-

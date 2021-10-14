@@ -12,6 +12,10 @@ public class thirdperson : ModuleRules
 		//CppStandard = CppStandardVersion.Latest; // doesn't work: get many compile errors in engine source files
 		PublicDependencyModuleNames.AddRange(
 			new string[]
-				{"Core", "CoreUObject", "Engine", "InputCore", "HeadMountedDisplay", "ProceduralMeshComponent"});
+			{
+				"Core", "CoreUObject", "Engine", "InputCore", "HeadMountedDisplay",
+				"ProceduralMeshComponent",
+				"VirtualHeightfieldMesh"
+			});
 	}
 }

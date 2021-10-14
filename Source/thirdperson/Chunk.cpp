@@ -2,6 +2,7 @@
 
 
 #include "Chunk.h"
+#include "VirtualHeightfieldMeshComponent.h"
 
 AChunk::AChunk()
 {

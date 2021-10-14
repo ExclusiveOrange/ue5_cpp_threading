@@ -390,6 +390,13 @@ namespace
   };
 
   //==============================================================================
+  
+  struct ProceduralLandscapeProperties
+  {
+    UMaterialInterface *LandscapeMaterial{};
+  };
+
+  //==============================================================================
 
   struct UnusedWorkUnits
   {
@@ -416,6 +423,8 @@ namespace
 
 struct AProceduralLandscape::Private : UnusedWorkUnits
 {
+  ProceduralLandscapeProperties properties{};
+  
   TArray<FIntVector> chunksInRadius_array; // order matters
   
   TArray<std::unique_ptr<GenerationWorkUnit>> chunksToGenerate;            // order matters
@@ -461,6 +470,23 @@ void AProceduralLandscape::Tick(float DeltaTime)
       playerLocation2D = FVector2D{ *maybeEditorViewLocation };
     else
       return; // couldn't get any location
+  
+  //- - - - - - - - - - - - - - - - - - - -
+
+  // TODO: check if any parameters have changed since the last tick;
+  //       if so then the landscape may need to be discarded and re-created,
+  //       taking care that work may be pending in the meshGenerator
+  if(!p->properties.LandscapeMaterial)
+    p->properties.LandscapeMaterial = LandscapeMaterial;
+  else
+    if( p->properties.LandscapeMaterial != LandscapeMaterial )
+    {
+      p->properties.LandscapeMaterial = LandscapeMaterial;
+
+      // propagate new landscape material to all chunks
+      for( const auto &loadedChunk : p->chunksLoaded )
+        loadedChunk.Value->mesh->SetMaterial(0, LandscapeMaterial);
+    }
   
   //- - - - - - - - - - - - - - - - - - - - 
 

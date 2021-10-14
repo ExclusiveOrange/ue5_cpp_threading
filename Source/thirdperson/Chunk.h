@@ -7,7 +7,7 @@
 #include "ProceduralMeshComponent.h"
 #include "Chunk.generated.h"
 
-UCLASS()
+UCLASS(Transient)
 class THIRDPERSON_API AChunk : public AActor
 {
 	GENERATED_BODY()

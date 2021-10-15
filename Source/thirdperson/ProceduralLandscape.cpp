@@ -222,11 +222,18 @@ namespace
       (vertices, normals, uv0, colors, tangents);
 
     const float rStepSize = resolution / chunkSize;
+    const FVector2D minCornerUV = 0.01f * minCorner;
+    const float uvStepSize = 0.01f * chunkSize / resolution; // 1 meter per texture UV unit
 
     // set vertex values
     for (int32 y = 0; y <= resolution; ++y)
+    {
+      const float texV0 = minCornerUV.Y + y * uvStepSize;
+      
       for (int32 x = 0; x <= resolution; ++x)
       {
+        const float texU0 = minCornerUV.X + x * uvStepSize;
+        
         const FVector yn = pointAt(x, y - 1);
         const FVector xn = pointAt(x - 1, y);
         const FVector xy = pointAt(x, y);
@@ -242,10 +249,11 @@ namespace
         
         vertices.Emplace(xy);
         normals.Emplace(normal);
-        uv0.Emplace(xy.X * 0.01f, xy.Y * 0.01f);
+        uv0.Emplace(texU0, texV0);
         colors.Emplace(1.f, 1.f, 1.f, 1.f);
         tangents.Emplace(1.f, 0.f, 0.f);
       }
+    }
 
     // make triangles array big enough to hold all triangles
     triangles.Reset(resolution * resolution * 2 * 3);
@@ -444,6 +452,7 @@ struct AProceduralLandscape::Private : UnusedWorkUnits
 AProceduralLandscape::AProceduralLandscape()
   : p{ new Private }
 {
+  
   // not sure if I need all of these but it seems Unreal changes how ticks work from version to version and this combo works
   PrimaryActorTick.bCanEverTick = true;
   PrimaryActorTick.bRunOnAnyThread = false; // only run on main thread because we need to create world objects
@@ -545,6 +554,11 @@ void AProceduralLandscape::Tick(float DeltaTime)
 
     createProceduralMeshSection(chunkActor->mesh, 0, workUnit->meshData);
     chunkActor->mesh->SetMaterial(0, LandscapeMaterial);
+    chunkActor->mesh->RuntimeVirtualTextures = RuntimeVirtualTextures;
+    chunkActor->mesh->VirtualTextureLodBias = VirtualTextureLodBias;
+    chunkActor->mesh->VirtualTextureCullMips = VirtualTextureCullMips;
+    chunkActor->mesh->VirtualTextureMinCoverage = VirtualTextureMinCoverage;
+    chunkActor->mesh->VirtualTextureRenderPassType = VirtualTextureRenderPassType;
     chunkActor->SetFolderPath("/Chunks");
 
     const FVector chunkTranslation{

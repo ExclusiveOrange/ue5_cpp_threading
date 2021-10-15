@@ -44,7 +44,7 @@ public:
   AProceduralLandscape();
   ~AProceduralLandscape() override;
 
-  bool ShouldTickIfViewportsOnly() const override { return true; }
+  // bool ShouldTickIfViewportsOnly() const override { return true; }
   void Tick(float DeltaTime) override;
 
 protected:

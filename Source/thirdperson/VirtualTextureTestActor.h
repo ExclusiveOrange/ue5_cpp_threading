@@ -4,23 +4,32 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "ProceduralMeshComponent.h"
-#include "Chunk.generated.h"
+#include "VirtualTextureTestActor.generated.h"
 
-UCLASS(Transient)
-class THIRDPERSON_API AChunk : public AActor
+UCLASS()
+class THIRDPERSON_API AVirtualTextureTestActor : public AActor
 {
 	GENERATED_BODY()
 	
 public:	
-	AChunk();
+	// Sets default values for this actor's properties
+	AVirtualTextureTestActor(const FObjectInitializer &ObjectInitializer);
+
+protected:
+	// Called when the game starts or when spawned
+	virtual void BeginPlay() override;
+
 
   void OnConstruction(const FTransform& Transform) override;
 
-  UPROPERTY()
-  UProceduralMeshComponent *mesh;
+public:	
+	// Called every frame
+	virtual void Tick(float DeltaTime) override;
+
+  UPROPERTY(EditAnywhere)
+  UStaticMeshComponent *StaticMeshComponent;
   
-  UPROPERTY()
+  UPROPERTY(EditAnywhere, BlueprintReadWrite)
   UMaterialInterface* Material;
   
   //==============================================================================

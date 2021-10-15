@@ -88,6 +88,7 @@ namespace
     const MeshData& meshData)
   {
     const auto& [vertices, triangles, normals, uv0, colors, tangents] = meshData;
+    mesh->bUseAsyncCooking = true;
     mesh->CreateMeshSection_LinearColor(sectionIndex, vertices, triangles, normals, uv0, colors, tangents, true);
   }
   
@@ -553,12 +554,13 @@ void AProceduralLandscape::Tick(float DeltaTime)
     AChunk* chunkActor = GetWorld()->SpawnActorDeferred<AChunk>(AChunk::StaticClass(), FTransform());
 
     createProceduralMeshSection(chunkActor->mesh, 0, workUnit->meshData);
-    chunkActor->mesh->SetMaterial(0, LandscapeMaterial);
-    chunkActor->mesh->RuntimeVirtualTextures = RuntimeVirtualTextures;
-    chunkActor->mesh->VirtualTextureLodBias = VirtualTextureLodBias;
-    chunkActor->mesh->VirtualTextureCullMips = VirtualTextureCullMips;
-    chunkActor->mesh->VirtualTextureMinCoverage = VirtualTextureMinCoverage;
-    chunkActor->mesh->VirtualTextureRenderPassType = VirtualTextureRenderPassType;
+    // chunkActor->mesh->
+    // chunkActor->Material = LandscapeMaterial;
+    chunkActor->RuntimeVirtualTextures = RuntimeVirtualTextures;
+    chunkActor->VirtualTextureLodBias = VirtualTextureLodBias;
+    chunkActor->VirtualTextureCullMips = VirtualTextureCullMips;
+    chunkActor->VirtualTextureMinCoverage = VirtualTextureMinCoverage;
+    chunkActor->VirtualTextureRenderPassType = VirtualTextureRenderPassType;
     chunkActor->SetFolderPath("/Chunks");
 
     const FVector chunkTranslation{

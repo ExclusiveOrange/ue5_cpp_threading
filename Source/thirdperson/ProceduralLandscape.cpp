@@ -171,6 +171,17 @@ namespace
     //   NewBodySetup->CreatePhysicsMeshes();
     // }
 
+    // COMPLEX COLLISION
+    StaticMesh->CreateBodySetup();
+    {
+      UBodySetup *NewBodySetup = StaticMesh->GetBodySetup();
+      NewBodySetup->bMeshCollideAll = true;
+      NewBodySetup->bGenerateMirroredCollision = false;
+      NewBodySetup->bDoubleSidedGeometry = false;
+      NewBodySetup->CollisionTraceFlag = CTF_UseComplexAsSimple;
+      NewBodySetup->CreatePhysicsMeshes();
+    }
+
     // //// MATERIALS
     // TSet<UMaterialInterface*> UniqueMaterials;
     // const int32 NumSections = ProcMeshComp->GetNumSections();
@@ -660,7 +671,7 @@ void AProceduralLandscape::Tick(float DeltaTime)
 
     UProceduralMeshComponent *proceduralMesh = NewObject<UProceduralMeshComponent>(this);
     
-    proceduralMesh->bUseComplexAsSimpleCollision = true;
+    // proceduralMesh->bUseComplexAsSimpleCollision = true;
     // proceduralMesh->SetMobility(EComponentMobility::Static);
     // proceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
     // proceduralMesh->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
@@ -668,6 +679,10 @@ void AProceduralLandscape::Tick(float DeltaTime)
     createProceduralMeshSection(proceduralMesh, 0, workUnit->meshData);
 
     UStaticMesh *staticMesh = convertProceduralMeshToStaticMesh(chunkActor->StaticMeshComponent, proceduralMesh);
+
+
+    // these settings alone don't seem to enable pawn <-> complex collision
+    //staticMesh->ComplexCollisionMesh = staticMesh;
     
     chunkActor->StaticMeshComponent->SetStaticMesh(staticMesh);
     proceduralMesh->DestroyComponent();

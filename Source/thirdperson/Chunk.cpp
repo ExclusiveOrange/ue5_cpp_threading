@@ -22,7 +22,7 @@ void AChunk::OnConstruction(const FTransform& transform)
   StaticMeshComponent->VirtualTextureRenderPassType = VirtualTextureRenderPassType;
 
   // StaticMeshComponent->bUseDefaultCollision = true;
-  StaticMeshComponent->collision
-  StaticMeshComponent->UpdateCollisionFromStaticMesh();
   StaticMeshComponent->SetMobility(EComponentMobility::Static);
+  // StaticMeshComponent->bDrawMeshCollisionIfComplex = true; // actually draws mesh collision wireframe at least in PIE
+  // StaticMeshComponent->bTraceComplexOnMove = true; // doesn't seem to affect pawn
 }

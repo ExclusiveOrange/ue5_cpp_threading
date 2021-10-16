@@ -554,8 +554,7 @@ void AProceduralLandscape::Tick(float DeltaTime)
     AChunk* chunkActor = GetWorld()->SpawnActorDeferred<AChunk>(AChunk::StaticClass(), FTransform());
 
     createProceduralMeshSection(chunkActor->mesh, 0, workUnit->meshData);
-    // chunkActor->mesh->
-    // chunkActor->Material = LandscapeMaterial;
+    chunkActor->Material = LandscapeMaterial;
     chunkActor->RuntimeVirtualTextures = RuntimeVirtualTextures;
     chunkActor->VirtualTextureLodBias = VirtualTextureLodBias;
     chunkActor->VirtualTextureCullMips = VirtualTextureCullMips;

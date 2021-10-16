@@ -129,7 +129,6 @@ namespace
 
     FMeshDescription MeshDescription = BuildMeshDescription(ProcMeshComp);
 
-    // If we got some valid data.
     if (MeshDescription.Polygons().Num() <= 0)
       return nullptr;
 
@@ -137,10 +136,11 @@ namespace
     // UPackage* Package = CreatePackage(*UserPackageName);
     // check(Package);
 
+
     const FName MeshName{ProcMeshComp->GetName() + TEXT("_Static")};
 
     // Create StaticMesh object
-    UStaticMesh* StaticMesh = NewObject<UStaticMesh>(outerObject, MeshName, RF_Public | RF_Standalone);
+    UStaticMesh* StaticMesh = NewObject<UStaticMesh>(outerObject, MeshName, RF_Transient);
     StaticMesh->InitResources();
 
     StaticMesh->SetLightingGuid();
@@ -159,33 +159,33 @@ namespace
     StaticMesh->CommitMeshDescription(0);
 
     //// SIMPLE COLLISION
-    if (!ProcMeshComp->bUseComplexAsSimpleCollision)
-    {
-      StaticMesh->CreateBodySetup();
-      UBodySetup* NewBodySetup = StaticMesh->GetBodySetup();
-      NewBodySetup->BodySetupGuid = FGuid::NewGuid();
-      NewBodySetup->AggGeom.ConvexElems = ProcMeshComp->ProcMeshBodySetup->AggGeom.ConvexElems;
-      NewBodySetup->bGenerateMirroredCollision = false;
-      NewBodySetup->bDoubleSidedGeometry = true;
-      NewBodySetup->CollisionTraceFlag = CTF_UseDefault;
-      NewBodySetup->CreatePhysicsMeshes();
-    }
+    // if (!ProcMeshComp->bUseComplexAsSimpleCollision)
+    // {
+    //   StaticMesh->CreateBodySetup();
+    //   UBodySetup* NewBodySetup = StaticMesh->GetBodySetup();
+    //   NewBodySetup->BodySetupGuid = FGuid::NewGuid();
+    //   NewBodySetup->AggGeom.ConvexElems = ProcMeshComp->ProcMeshBodySetup->AggGeom.ConvexElems;
+    //   NewBodySetup->bGenerateMirroredCollision = false;
+    //   NewBodySetup->bDoubleSidedGeometry = false;
+    //   NewBodySetup->CollisionTraceFlag = CTF_UseDefault;
+    //   NewBodySetup->CreatePhysicsMeshes();
+    // }
 
-    //// MATERIALS
-    TSet<UMaterialInterface*> UniqueMaterials;
-    const int32 NumSections = ProcMeshComp->GetNumSections();
-    for (int32 SectionIdx = 0; SectionIdx < NumSections; SectionIdx++)
-    {
-      FProcMeshSection* ProcSection =
-        ProcMeshComp->GetProcMeshSection(SectionIdx);
-      UMaterialInterface* Material = ProcMeshComp->GetMaterial(SectionIdx);
-      UniqueMaterials.Add(Material);
-    }
-    // Copy materials to new mesh
-    for (auto* Material : UniqueMaterials)
-    {
-      StaticMesh->GetStaticMaterials().Add(FStaticMaterial(Material));
-    }
+    // //// MATERIALS
+    // TSet<UMaterialInterface*> UniqueMaterials;
+    // const int32 NumSections = ProcMeshComp->GetNumSections();
+    // for (int32 SectionIdx = 0; SectionIdx < NumSections; SectionIdx++)
+    // {
+    //   FProcMeshSection* ProcSection =
+    //     ProcMeshComp->GetProcMeshSection(SectionIdx);
+    //   UMaterialInterface* Material = ProcMeshComp->GetMaterial(SectionIdx);
+    //   UniqueMaterials.Add(Material);
+    // }
+    // // Copy materials to new mesh
+    // for (auto* Material : UniqueMaterials)
+    // {
+    //   StaticMesh->GetStaticMaterials().Add(FStaticMaterial(Material));
+    // }
 
     //Set the Imported version before calling the build
     StaticMesh->ImportVersion = EImportStaticMeshVersion::LastVersion;
@@ -590,9 +590,7 @@ void AProceduralLandscape::Tick(float DeltaTime)
   
   //- - - - - - - - - - - - - - - - - - - -
 
-  // TODO: check if any parameters have changed since the last tick;
-  //       if so then the landscape may need to be discarded and re-created,
-  //       taking care that work may be pending in the meshGenerator
+  // check for and propagate change of LandscapeMaterial to all chunks
   if(!p->properties.LandscapeMaterial)
     p->properties.LandscapeMaterial = LandscapeMaterial;
   else
@@ -602,7 +600,7 @@ void AProceduralLandscape::Tick(float DeltaTime)
 
       // propagate new landscape material to all chunks
       for( const auto &loadedChunk : p->chunksLoaded )
-        loadedChunk.Value->mesh->SetMaterial(0, LandscapeMaterial);
+        loadedChunk.Value->StaticMeshComponent->SetMaterial(0, LandscapeMaterial);
     }
   
   //- - - - - - - - - - - - - - - - - - - - 
@@ -661,10 +659,21 @@ void AProceduralLandscape::Tick(float DeltaTime)
     AChunk* chunkActor = GetWorld()->SpawnActorDeferred<AChunk>(AChunk::StaticClass(), FTransform());
 
     UProceduralMeshComponent *proceduralMesh = NewObject<UProceduralMeshComponent>(this);
-
+    
+    proceduralMesh->bUseComplexAsSimpleCollision = true;
+    // proceduralMesh->SetMobility(EComponentMobility::Static);
+    // proceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    // proceduralMesh->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
+    
     createProceduralMeshSection(proceduralMesh, 0, workUnit->meshData);
-    chunkActor->mesh->SetStaticMesh(convertProceduralMeshToStaticMesh(chunkActor, proceduralMesh));
+
+    UStaticMesh *staticMesh = convertProceduralMeshToStaticMesh(chunkActor->StaticMeshComponent, proceduralMesh);
+    
+    chunkActor->StaticMeshComponent->SetStaticMesh(staticMesh);
     proceduralMesh->DestroyComponent();
+
+    // chunkActor->mesh->bAlwaysCreatePhysicsState = true;
+    // chunkActor->mesh->bUseDefaultCollision = true;
     
     chunkActor->Material = LandscapeMaterial;
     chunkActor->RuntimeVirtualTextures = RuntimeVirtualTextures;

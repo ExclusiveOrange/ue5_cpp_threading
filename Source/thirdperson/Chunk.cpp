@@ -5,9 +5,8 @@
 
 AChunk::AChunk()
 {
-  // mesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("AChunk mesh"));
-  mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AChunk static mesh"));
-  RootComponent = mesh;
+  StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AChunk static mesh"), true);
+  RootComponent = StaticMeshComponent;
 	PrimaryActorTick.bCanEverTick = false;
 }
 
@@ -15,10 +14,15 @@ void AChunk::OnConstruction(const FTransform& transform)
 {
   Super::OnConstruction(transform);
   
-  mesh->SetMaterial(0, Material);
-  mesh->RuntimeVirtualTextures = RuntimeVirtualTextures;
-  mesh->VirtualTextureLodBias = VirtualTextureLodBias;
-  mesh->VirtualTextureCullMips = VirtualTextureCullMips;
-  mesh->VirtualTextureMinCoverage = VirtualTextureMinCoverage;
-  mesh->VirtualTextureRenderPassType = VirtualTextureRenderPassType;
+  StaticMeshComponent->SetMaterial(0, Material);
+  StaticMeshComponent->RuntimeVirtualTextures = RuntimeVirtualTextures;
+  StaticMeshComponent->VirtualTextureLodBias = VirtualTextureLodBias;
+  StaticMeshComponent->VirtualTextureCullMips = VirtualTextureCullMips;
+  StaticMeshComponent->VirtualTextureMinCoverage = VirtualTextureMinCoverage;
+  StaticMeshComponent->VirtualTextureRenderPassType = VirtualTextureRenderPassType;
+
+  // StaticMeshComponent->bUseDefaultCollision = true;
+  StaticMeshComponent->collision
+  StaticMeshComponent->UpdateCollisionFromStaticMesh();
+  StaticMeshComponent->SetMobility(EComponentMobility::Static);
 }

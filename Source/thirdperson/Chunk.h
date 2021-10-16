@@ -16,14 +16,11 @@ public:
 	AChunk();
 
   void OnConstruction(const FTransform& Transform) override;
-
-  // UPROPERTY()
-  // UProceduralMeshComponent *mesh;
   
   UPROPERTY(EditAnywhere)
-  UStaticMeshComponent *mesh;
+  UStaticMeshComponent *StaticMeshComponent;
   
-  UPROPERTY()
+  UPROPERTY(EditAnywhere)
   UMaterialInterface* Material;
   
   //==============================================================================

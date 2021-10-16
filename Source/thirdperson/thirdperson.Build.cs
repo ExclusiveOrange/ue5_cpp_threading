@@ -15,6 +15,7 @@ public class thirdperson : ModuleRules
 			{
 				"Core", "CoreUObject", "Engine", "InputCore", "HeadMountedDisplay",
 				"ProceduralMeshComponent",
+				"MeshDescription",
 				"VirtualHeightfieldMesh"
 			});
 	}

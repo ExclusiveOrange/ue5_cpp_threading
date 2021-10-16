@@ -17,8 +17,11 @@ public:
 
   void OnConstruction(const FTransform& Transform) override;
 
-  UPROPERTY()
-  UProceduralMeshComponent *mesh;
+  // UPROPERTY()
+  // UProceduralMeshComponent *mesh;
+  
+  UPROPERTY(EditAnywhere)
+  UStaticMeshComponent *mesh;
   
   UPROPERTY()
   UMaterialInterface* Material;

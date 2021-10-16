@@ -5,7 +5,8 @@
 
 AChunk::AChunk()
 {
-  mesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("AChunk mesh"));
+  // mesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("AChunk mesh"));
+  mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AChunk static mesh"));
   RootComponent = mesh;
 	PrimaryActorTick.bCanEverTick = false;
 }

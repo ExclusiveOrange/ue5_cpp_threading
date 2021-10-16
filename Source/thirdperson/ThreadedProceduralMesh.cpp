@@ -332,7 +332,7 @@ void AThreadedProceduralMesh::Tick(float DeltaTime)
 
         AChunk* chunk = GetWorld()->SpawnActorDeferred<AChunk>(AChunk::StaticClass(), FTransform());
 
-        createProceduralMeshSection(chunk->mesh, 0, workUnit->meshData);
+        // createProceduralMeshSection(chunk->mesh, 0, workUnit->meshData);
         p->putUnusedWorkUnit(std::move(workUnit));
         chunk->mesh->SetMaterial(0, Material);
         chunk->SetFolderPath("/Chunks");

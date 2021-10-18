@@ -9,9 +9,13 @@ AChunk::AChunk()
   
   StaticMeshComponent->bRenderInMainPass = false; // not needed so long as a virtual heightfield mesh is overlain
   StaticMeshComponent->bRenderInDepthPass = true; // needed for proper shadows evidently
+
+  // TESTING
+  // StaticMeshComponent->bUseAsOccluder = false;
   
   RootComponent = StaticMeshComponent;
-	PrimaryActorTick.bCanEverTick = false;
+  PrimaryActorTick.bCanEverTick = false;
+
 }
 
 void AChunk::OnConstruction(const FTransform& transform)

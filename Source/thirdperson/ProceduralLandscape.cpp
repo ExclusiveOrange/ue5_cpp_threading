@@ -155,8 +155,10 @@ namespace
     SrcModel.BuildSettings.bGenerateLightmapUVs = true;
     SrcModel.BuildSettings.SrcLightmapIndex = 0;
     SrcModel.BuildSettings.DstLightmapIndex = 1;
+    
     StaticMesh->CreateMeshDescription(0, MoveTemp(MeshDescription));
     StaticMesh->CommitMeshDescription(0);
+
 
     //// SIMPLE COLLISION
     // if (!ProcMeshComp->bUseComplexAsSimpleCollision)
@@ -679,7 +681,6 @@ void AProceduralLandscape::Tick(float DeltaTime)
     createProceduralMeshSection(proceduralMesh, 0, workUnit->meshData);
 
     UStaticMesh *staticMesh = convertProceduralMeshToStaticMesh(chunkActor->StaticMeshComponent, proceduralMesh);
-
 
     // these settings alone don't seem to enable pawn <-> complex collision
     //staticMesh->ComplexCollisionMesh = staticMesh;
